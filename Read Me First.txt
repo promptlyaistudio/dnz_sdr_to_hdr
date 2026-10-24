@@ -1,0 +1,163 @@
+DNZ SDR TO HDR  -  build 1.0
+============================
+
+An OFX plugin for Autodesk Flame that turns an SDR plate into HDR, using Lightricks'
+LTX-2.5 "SDR to HDR" IC-LoRA. It runs entirely on your Mac: no ComfyUI, no shared
+folders, no cloud. It gives you a scene-linear EXR clip back (ACEScg by default) plus
+an HLG master you can look at, ready for grading.
+
+It is a sibling of the Matte LTX Native kit and leaves that one alone. Both can be
+installed at the same time, and they share the Python environment, the LTX-2 code and
+the 42 GB transformer, so installing this one after Matte costs about 3 GB, not 45.
+
+
+WHAT YOU NEED
+-------------
+- Apple Silicon Mac (M1/M2/M3/M4...). 128 GB RAM recommended, 64 GB minimum.
+- Autodesk Flame with OFX support.
+- The Matte LTX Native kit installed, OR about 61 GB free if you install this one alone.
+- A free Hugging Face account, with the SDR-to-HDR repository approved for you.
+
+
+BEFORE YOU INSTALL (5 minutes)
+------------------------------
+1. Open this page while logged in to Hugging Face and click "Agree and access repository":
+     https://huggingface.co/Lightricks/LTX-2.5-22b-IC-LoRA-SDR-To-HDR
+   The repository is gated: the installer cannot download it until your account has
+   been granted access. If the download fails with "This repository requires approval",
+   that is what is missing - request access, wait for the approval, run it again.
+2. If you have not installed the Matte kit, also accept:
+     https://huggingface.co/Lightricks/LTX-2.5
+3. Create a token with READ access at https://huggingface.co/settings/tokens.
+
+
+INSTALL
+-------
+1. Quit Flame.
+2. RIGHT-click "Install DNZ SDR to HDR.command" and choose Open.
+3. Press Return for the install folder (/Users/Shared/MatteLTXNative) unless you have
+   a reason not to - it should be the same folder the Matte kit uses, so the big
+   models are reused instead of downloaded again.
+4. Open Flame.
+
+
+WHAT IT GIVES YOU
+-----------------
+The node writes an HDR clip that is NOT the same colour space as the plate:
+
+  Input Color Space      what the plate actually is. ACEScg = scene-linear EXR from an
+                         ACES Flame. sRGB gamma = ordinary video or PNG. The plugin never
+                         guesses this: a wrong choice gives wrong HDR, silently.
+  Output Color Space     what you want back. ACEScg scene-linear drops straight into an
+                         ACES batch. This is the default and almost always what you want.
+  Output Mode            HDR (the result), Original SDR (the untouched plate, for
+                         comparison), or Side by Side (plate on the left half, HDR on the
+                         right half).
+
+The values above 1.0 are real: highlights come back brighter than white, which is what
+you want for grading. They are also invented - the model infers what the highlights
+should look like, it does not recover detail the camera never captured. Grade with it,
+do not light-match or measure from it.
+
+
+USING IT
+--------
+In Batch: add  DNZ > DNZ SDR to HDR  after your plate.
+
+  Input Color Space     set this first, it is the one thing that must be right.
+  Analyze               Full-quality pass at Work Res (1920 max). The result is STORED
+                        WITH THE NODE, so scrubbing and re-rendering are instant later.
+  Preview (fast)        Same at Preview Res (768). About a minute for 40 frames. Use it
+                        to check the look before committing to a full Analyze.
+  Refresh Status        Shows progress and redraws the viewer with whatever is ready.
+  Clear Analysis        Cancels a running job / forgets the stored HDR clip.
+  Range Start / End     Convert part of a clip only. 0 means "clip start" / "clip end".
+
+  TIMINGS - read this, the first one surprises people
+  ----------------------------------------------------
+  The FIRST Analyze after Flame starts (or after the engine has been idle 3 hours) loads
+  the 42 GB transformer into memory. On a 128 GB M-series Mac that alone took about
+  20 minutes, before any denoise work. The node says so honestly:
+
+      loading the 22B model - reads ~42 GB into memory, typically 10-20 min on first run
+
+  After that the model STAYS LOADED in the engine, so every later Analyze only runs the
+  denoise pass. Measured here: a second job on a DIFFERENT clip finished in seconds where
+  the first took about 23 min. Different clip, different length, different seed - all fast,
+  because the weights are already resident.
+
+  The engine sleeps after 3 idle hours to give the memory back; the next Analyze pays the
+  load again. So: one load per Flame session, then work at denoise speed.
+
+  Actual denoise time (model already loaded): about 40 frames at 1920 in a few minutes;
+  the same at 768 in well under a minute.
+
+HDR Adjust - applied live to the stored clip, no re-analysis:
+  Exposure (stops), Highlight Gain (gain above 1.0 only, so the midtones stay put),
+  and Clip Preview (clamps to 0..1 so you can see exactly what clips).
+  Output Mode also works live. Everything else in the node needs a new Analyze.
+
+
+CHUNKS AND LONG SHOTS
+---------------------
+The whole clip is converted in one pass, up to 145 frames. Past that, split it with
+Range Start / End and convert the parts separately. Each part is graded independently,
+so check the exposure at the cut - there can be a visible step.
+
+
+SETTINGS FILE
+-------------
+Create <install folder>/hdr_settings.json to change two things:
+
+    {"timeout": 28800, "model_dirs": "/path/to/ltx/models:/other/path"}
+
+timeout is seconds before a stuck job is killed (default 14400 = 4 hours).
+model_dirs is a colon-separated list of extra folders to search for the 42 GB
+transformer and the video VAE, when they are not under <install folder>/models
+(for example the Matte kit's or ComfyUI's model folder). Leftover 100-byte LFS
+pointer files are ignored automatically; only a genuine multi-GB model counts.
+
+
+TROUBLESHOOTING
+---------------
+- Status says "engine not installed at ...": re-run the installer.
+- Status shows "Missing model files": the SDR-to-HDR IC-LoRA is not in
+  <install folder>/models/hdr/. See BEFORE YOU INSTALL.
+- Status says "ERROR: ... This repository requires approval": your Hugging Face account
+  has not been granted access to the gated repository yet.
+- Nothing happens after Analyze: press Refresh Status.
+- Pressing Analyze twice does not queue twice; use Clear Analysis to cancel.
+- Seams between 8-frame segments: turn off Seam Keyframes and Analyze again.
+- Out of memory: lower Work Res to 1024, close other GPU-heavy apps, and set Offload to
+  CPU offload.
+- The HDR looks flat or the colours are wrong: check Input Color Space first, it is the
+  usual cause.
+- The engine log is at <install folder>/run/dnz_hdr_engine.log, and the last pipeline
+  output is in the same folder.
+
+
+DOING IT WITHOUT FLAME
+----------------------
+The engine is a plain script, so a Write File / Read File round trip works too:
+
+  # Flame: Write File -> a folder of EXR frames, then:
+  /Users/Shared/MatteLTXNative/venv/bin/python \
+      /Users/Shared/MatteLTXNative/engine/dnz_hdr_pipeline.py \
+      --input /tmp/sdr_exr --input-colorspace acescg --frame-rate 24 \
+      --output /tmp/hdr_exr
+
+  # then Read File the result back into Flame.
+  --input-colorspace is required for EXR input and is never guessed:
+  acescg, srgb_linear (linear Rec.709) or acescct. PNG/JPG input is treated as
+  display sRGB and converted for you.
+
+
+LICENCES - please read
+----------------------
+The plugin downloads, under YOUR Hugging Face account, models that carry their own terms:
+- LTX-2.5 and the SDR-to-HDR IC-LoRA: Lightricks LTX-2 Community License (free for
+  individuals and companies under the revenue threshold stated in the licence; larger
+  companies need a commercial licence from Lightricks). Check that your use - especially
+  paid client work - fits.
+- LTX-2 pipeline code: Lightricks (downloaded from GitHub by the installer).
+The plugin itself is provided as-is, no warranty.

@@ -1,0 +1,12 @@
+.DS_Store
+__pycache__/
+*.pyc
+build/
+*.bundle/
+*.ofx
+# compiled test binaries
+tests/ofx_host_smoke
+tests/half_roundtrip
+tests/engine_client_it
+ARCHITECTURE_2026-10-14.md
+src/engine_client.cpp.backup
